@@ -196,11 +196,16 @@ if os.path.exists(target):
 servers = expand_paths(servers)
 doc['mcp'] = {name: to_opencode(cfg) for name, cfg in servers.items() if not cfg.get('disabled', True)}
 
-# Point instructions at the agents context and skills directories
-doc['instructions'] = [
+# Upsert agents context and skills into instructions (preserve existing entries)
+agents_instructions = [
     os.path.join(agents, 'context', '*.md'),
     os.path.join(agents, 'skills', '*', 'SKILL.md'),
 ]
+existing = doc.get('instructions', [])
+for entry in agents_instructions:
+    if entry not in existing:
+        existing.append(entry)
+doc['instructions'] = existing
 
 os.makedirs(os.path.dirname(target), exist_ok=True)
 with open(target, 'w') as f:
