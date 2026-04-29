@@ -23,7 +23,6 @@ Shared configuration, context, and MCP server management for AI coding agents (C
 │   ├── claude   -> ~/.claude
 │   ├── kiro     -> ~/.kiro
 │   └── opencode -> ~/.config/opencode
-├── plans/              — implementation plans for ongoing or completed projects
 └── skills/             — reusable skill definitions (SKILL.md format)
 ```
 
@@ -83,10 +82,6 @@ Markdown files containing standing directives that apply across all projects. Sy
 ## harnesses/
 
 Symlinks to each agent's config directory for easy navigation.
-
-## plans/
-
-One file per project/feature. Documents objectives, implementation steps, and current status.
 
 ## skills/
 
