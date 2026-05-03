@@ -73,7 +73,7 @@ secrets.json             (shared secrets: API keys)
 1. Add the full definition to `servers.json`
 2. If it should be disabled by default, add `"disabled": true` to `servers.json` (or a specific `<harness>.servers.json` to target one harness)
 3. If it needs secrets, add them to `secrets.json` (or a harness-specific `.secrets.json`)
-4. Run `bash ~/.agents/setup` to apply
+4. Run `~/.agents/setup` to apply
 
 ## Files in this directory
 

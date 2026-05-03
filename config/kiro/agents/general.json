@@ -1,0 +1,13 @@
+{
+  "name": "general",
+  "description": "General",
+  "tools": ["*"],
+  "allowedTools": ["*"],
+  "includeMcpJson": true,
+  "resources": [
+    "file://~/.kiro/steering/**/*.md",
+    "file://.kiro/steering/**/*.md",
+    "skill://~/.kiro/skills/**/*.md",
+    "skill://.kiro/skills/**/*.md"
+  ]
+}

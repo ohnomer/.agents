@@ -31,10 +31,10 @@ Shared configuration, context, and MCP server management for AI coding agents (C
 The setup script wires this repo into each harness. Run it after cloning, adding skills/context, or editing MCP configs:
 
 ```bash
-bash ~/.agents/setup            # all harnesses
-bash ~/.agents/setup kiro       # just kiro
-bash ~/.agents/setup claude     # just claude
-bash ~/.agents/setup opencode   # just opencode
+~/.agents/setup            # all harnesses
+~/.agents/setup kiro       # just kiro
+~/.agents/setup claude     # just claude
+~/.agents/setup opencode   # just opencode
 ```
 
 What it does:
