@@ -1,329 +1,335 @@
-#!/usr/bin/env bash
-# setup.sh — wire agent harnesses to ~/.agents
-# Run once after cloning on a new machine, or to repair drift.
-# Idempotent: skips anything already correctly symlinked.
-# MCP: merges mcp/servers.json + mcp/<agent>.servers.json + mcp/secrets.json + mcp/<agent>.secrets.json
-#      into each agent's native MCP config location.
+#!/usr/bin/env python3
+"""setup — wire agent harnesses to ~/.agents
 
-set -euo pipefail
+Run once after cloning on a new machine, or to repair drift.
+Idempotent: skips anything already correctly symlinked.
+MCP: merges mcp/servers.json + mcp/<harness>.servers.json + mcp/secrets.json + mcp/<harness>.secrets.json
+     into each harness's native MCP config location.
 
-AGENTS="$(cd "$(dirname "$0")" && pwd)"
+Usage: setup [--yolo] [claude|kiro|opencode|all]
+"""
 
-# Ensure ~/.agents points to this repo (skip if already correct or if repo IS ~/.agents)
-HOME_AGENTS="$HOME/.agents"
-if [ "$AGENTS" != "$HOME_AGENTS" ]; then
-  if [ -L "$HOME_AGENTS" ] && [ "$(readlink "$HOME_AGENTS")" = "$AGENTS" ]; then
-    echo "~/.agents -> $AGENTS (ok)"
-  else
-    [ -e "$HOME_AGENTS" ] && echo "WARNING: $HOME_AGENTS already exists and is not a symlink to $AGENTS. Skipping." || {
-      ln -s "$AGENTS" "$HOME_AGENTS"
-      echo "~/.agents -> $AGENTS (linked)"
+import argparse
+import json
+import os
+import shutil
+import sys
+from glob import glob
+from pathlib import Path
+
+AGENTS = Path(__file__).resolve().parent
+HOME = Path.home()
+
+
+# --- Utilities ---
+
+def deep_merge(base, override):
+    for k, v in override.items():
+        if k in base and isinstance(base[k], dict) and isinstance(v, dict):
+            deep_merge(base[k], v)
+        else:
+            base[k] = v
+
+
+def expand_paths(obj):
+    home = str(HOME)
+    if isinstance(obj, str):
+        return obj.replace('${HOME}', home)
+    if isinstance(obj, list):
+        return [expand_paths(i) for i in obj]
+    if isinstance(obj, dict):
+        return {k: expand_paths(v) for k, v in obj.items()}
+    return obj
+
+
+def read_json(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def write_json(path, doc):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w') as f:
+        json.dump(doc, f, indent=2)
+        f.write('\n')
+
+
+def load_mcp_servers(harness):
+    """Load and merge MCP server layers for a harness."""
+    servers = read_json(AGENTS / 'mcp' / 'servers.json')
+    for name in [f'{harness}.servers.json', 'secrets.json', f'{harness}.secrets.json']:
+        path = AGENTS / 'mcp' / name
+        if path.exists():
+            for sname, cfg in read_json(path).items():
+                servers.setdefault(sname, {})
+                deep_merge(servers[sname], cfg)
+    return expand_paths(servers)
+
+
+def link(src, dst):
+    """Create a symlink, with safety checks."""
+    src, dst = str(src), str(dst)
+    agents_str = str(AGENTS)
+
+    # Safety: never write inside the .agents directory itself
+    dst_parent = str(Path(dst).parent.resolve())
+    if dst.startswith(agents_str) or dst_parent.startswith(agents_str):
+        print(f'  SKIP (would write inside .agents): {dst}')
+        return
+
+    # Safety: never create a self-referential symlink
+    src_real = str(Path(src).resolve())
+    dst_real = str(Path(dst_parent) / Path(dst).name)
+    if src_real == dst_real:
+        print(f'  SKIP (would be self-referential): {dst}')
+        return
+
+    if os.path.islink(dst) and os.readlink(dst) == src:
+        print(f'  ok  {dst}')
+    else:
+        if os.path.exists(dst) or os.path.islink(dst):
+            if os.path.isdir(dst) and not os.path.islink(dst):
+                shutil.rmtree(dst)
+            else:
+                os.remove(dst)
+        os.symlink(src, dst)
+        print(f'  linked  {dst} -> {src}')
+
+
+def prune(directory):
+    """Remove symlinks pointing into AGENTS whose target no longer exists."""
+    d = Path(directory)
+    if not d.is_dir():
+        return
+    agents_str = str(AGENTS)
+    for entry in d.iterdir():
+        if entry.is_symlink():
+            target = os.readlink(entry)
+            if target.startswith(agents_str) and not entry.exists():
+                entry.unlink()
+                print(f'  pruned  {entry} (target removed)')
+
+
+def link_skills(dest_dir):
+    """Symlink each skills/*/ into dest_dir."""
+    os.makedirs(dest_dir, exist_ok=True)
+    prune(dest_dir)
+    for skill in sorted((AGENTS / 'skills').iterdir()):
+        if skill.is_dir():
+            link(skill, Path(dest_dir) / skill.name)
+
+
+def link_context(dest_dir):
+    """Symlink each context/*.md into dest_dir."""
+    os.makedirs(dest_dir, exist_ok=True)
+    for ctx in sorted((AGENTS / 'context').glob('*.md')):
+        link(ctx, Path(dest_dir) / ctx.name)
+
+
+def merge_config(src_path, target_path):
+    """Deep merge a JSON config file into an existing target."""
+    overrides = read_json(src_path)
+    doc = read_json(target_path) if os.path.exists(target_path) else {}
+    deep_merge(doc, overrides)
+    write_json(target_path, doc)
+
+
+# --- MCP sync ---
+
+def sync_mcp_claude():
+    target = HOME / '.claude.json'
+    servers = load_mcp_servers('claude')
+
+    doc = read_json(target) if target.exists() else {}
+    existing = doc.get('mcpServers', {})
+
+    def clean(name, cfg):
+        result = {k: v for k, v in cfg.items() if k != 'disabled'}
+        if 'disabled' in cfg:
+            result['disabled'] = cfg['disabled']
+        elif name in existing and 'disabled' in existing[name]:
+            result['disabled'] = existing[name]['disabled']
+        else:
+            result['disabled'] = True
+        return result
+
+    doc['mcpServers'] = {k: clean(k, v) for k, v in servers.items()}
+    write_json(target, doc)
+    print(f'  updated  {target} (mcpServers)')
+
+
+def sync_mcp_kiro():
+    target = HOME / '.kiro' / 'settings' / 'mcp.json'
+    servers = load_mcp_servers('kiro')
+
+    existing = {}
+    if target.exists():
+        existing = read_json(target).get('mcpServers', {})
+
+    def clean(name, cfg):
+        result = {k: v for k, v in cfg.items() if k != 'disabled'}
+        if 'disabled' in cfg:
+            result['disabled'] = cfg['disabled']
+        elif name in existing:
+            result['disabled'] = existing[name].get('disabled', False)
+        else:
+            result['disabled'] = True
+        return result
+
+    doc = {'mcpServers': {k: clean(k, v) for k, v in servers.items()}}
+    write_json(target, doc)
+    print(f'  updated  {target}')
+
+
+def sync_mcp_opencode():
+    target = HOME / '.config' / 'opencode' / 'opencode.json'
+    servers = load_mcp_servers('opencode')
+
+    for name in servers:
+        servers[name].setdefault('disabled', True)
+
+    def to_opencode(cfg):
+        result = {}
+        t = cfg.get('type', 'stdio')
+        result['type'] = 'local' if t == 'stdio' else t
+        cmd = cfg.get('command', '')
+        args = cfg.get('args', [])
+        result['command'] = ([cmd] if cmd else []) + args
+        env = cfg.get('env', {})
+        if env:
+            result['environment'] = env
+        for k, v in cfg.items():
+            if k not in ('type', 'command', 'args', 'env', 'disabled'):
+                result[k] = v
+        return result
+
+    doc = read_json(target) if target.exists() else {}
+    doc['mcp'] = {n: to_opencode(c) for n, c in servers.items() if not c.get('disabled', True)}
+    doc['instructions'] = [
+        str(AGENTS / 'context' / '*.md'),
+        str(AGENTS / 'skills' / '*' / 'SKILL.md'),
+    ]
+    write_json(target, doc)
+    print(f'  updated  {target} (mcp + instructions)')
+
+
+# --- Yolo ---
+
+def yolo_claude():
+    target = HOME / '.claude' / 'settings.json'
+    merge_config(AGENTS / 'config' / 'claude' / 'settings.json', target)
+    print(f'  yolo  {target} (merged config/claude/settings.json)')
+
+
+def yolo_kiro():
+    src = AGENTS / 'config' / 'kiro' / 'agents' / 'general.json'
+    dst = HOME / '.kiro' / 'agents' / 'general.json'
+    os.makedirs(dst.parent, exist_ok=True)
+    shutil.copy2(src, dst)
+
+    settings = HOME / '.kiro' / 'settings' / 'cli.json'
+    doc = read_json(settings) if settings.exists() else {}
+    doc['chat.defaultAgent'] = 'general'
+    write_json(settings, doc)
+    print(f'  yolo  {dst} (allowedTools: ["*"], defaultAgent: general)')
+
+
+def yolo_opencode():
+    target = HOME / '.config' / 'opencode' / 'opencode.json'
+    merge_config(AGENTS / 'config' / 'opencode' / 'opencode.json', target)
+    print(f'  yolo  {target} (merged config/opencode/opencode.json)')
+
+
+# --- Harness runners ---
+
+def run_claude(yolo=False):
+    print('=== Claude ===')
+    for d in [HOME / '.claude' / 'skills', HOME / '.claude' / 'rules']:
+        if d.is_symlink() and not d.exists():
+            d.unlink()
+            print(f'  pruned  {d} (broken symlink)')
+    link_skills(HOME / '.claude' / 'skills')
+    link_context(HOME / '.claude' / 'rules')
+    sync_mcp_claude()
+    if yolo:
+        yolo_claude()
+
+
+def run_kiro(yolo=False):
+    print('=== Kiro ===')
+    for d in [HOME / '.kiro' / 'skills', HOME / '.kiro' / 'steering']:
+        if d.is_symlink() and not d.exists():
+            d.unlink()
+            print(f'  pruned  {d} (broken symlink)')
+    link_skills(HOME / '.kiro' / 'skills')
+    link_context(HOME / '.kiro' / 'steering')
+    sync_mcp_kiro()
+    if yolo:
+        yolo_kiro()
+
+
+def run_opencode(yolo=False):
+    print('=== OpenCode ===')
+    sync_mcp_opencode()
+    if yolo:
+        yolo_opencode()
+
+
+# --- Main ---
+
+def ensure_home_symlink():
+    home_agents = HOME / '.agents'
+    if AGENTS == home_agents:
+        return
+    if home_agents.is_symlink() and os.readlink(home_agents) == str(AGENTS):
+        print(f'~/.agents -> {AGENTS} (ok)')
+    elif home_agents.exists():
+        print(f'WARNING: {home_agents} already exists and is not a symlink to {AGENTS}. Skipping.')
+    else:
+        os.symlink(AGENTS, home_agents)
+        print(f'~/.agents -> {AGENTS} (linked)')
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Wire agent harnesses to ~/.agents')
+    parser.add_argument('harness', nargs='?', default='all',
+                        choices=['claude', 'kiro', 'opencode', 'all'])
+    parser.add_argument('--yolo', action='store_true',
+                        help='Skip permission prompts in all harnesses')
+    args = parser.parse_args()
+
+    if args.yolo:
+        print('\n⚠️  --yolo will PERSISTENTLY disable permission prompts.')
+        print('   All tool use (file writes, shell commands, MCP tools) will')
+        print('   be auto-approved in every future session until manually reverted.')
+        try:
+            answer = input('\n   Continue? [y/N] ')
+            if answer.lower() != 'y':
+                print('Aborted.')
+                sys.exit(0)
+            answer = input('   Are you sure? [y/N] ')
+            if answer.lower() != 'y':
+                print('Aborted.')
+                sys.exit(0)
+        except (KeyboardInterrupt, EOFError):
+            print('\nAborted.')
+            sys.exit(1)
+        print()
+
+    ensure_home_symlink()
+
+    runners = {
+        'claude': run_claude,
+        'kiro': run_kiro,
+        'opencode': run_opencode,
     }
-  fi
-fi
 
-link() {
-  local src="$1" dst="$2"
-  # Safety: never write inside the .agents directory itself (resolve symlinks in parent)
-  local dst_parent
-  dst_parent="$(cd "$(dirname "$dst")" 2>/dev/null && pwd -P || true)"
-  if [[ "$dst" == "$AGENTS"* ]] || [[ "$dst_parent" == "$AGENTS"* ]]; then
-    echo "  SKIP (would write inside .agents): $dst"
-    return
-  fi
-  # Safety: never create a self-referential symlink
-  local src_real dst_real
-  src_real="$(cd "$(dirname "$src")" 2>/dev/null && pwd -P)/$(basename "$src")" || true
-  dst_real="$dst_parent/$(basename "$dst")"
-  if [[ "$src_real" == "$dst_real" ]]; then
-    echo "  SKIP (would be self-referential): $dst"
-    return
-  fi
-  if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then
-    echo "  ok  $dst"
-  else
-    [ -e "$dst" ] && rm -rf "$dst"
-    ln -s "$src" "$dst"
-    echo "  linked  $dst -> $src"
-  fi
-}
+    harnesses = runners.keys() if args.harness == 'all' else [args.harness]
+    for h in harnesses:
+        runners[h](yolo=args.yolo)
 
-prune() {
-  # Remove symlinks in $1 that point into $AGENTS but whose target no longer exists.
-  local dir="$1"
-  [ -d "$dir" ] || return 0
-  for entry in "$dir"/*; do
-    [ -L "$entry" ] || continue
-    local target
-    target="$(readlink "$entry")"
-    if [[ "$target" == "$AGENTS"* ]] && [ ! -e "$entry" ]; then
-      rm "$entry"
-      echo "  pruned  $entry (target removed)"
-    fi
-  done
-}
+    print('\nDone.')
 
-sync_mcp_claude() {
-  # Merges mcp/servers.json + mcp/claude.servers.json + mcp/secrets.json + mcp/claude.secrets.json into ~/.claude.json mcpServers.
-  local target="$HOME/.claude.json"
-  python3 - "$AGENTS" "$target" <<'PYEOF'
-import json, sys, os
 
-def deep_merge(base, override):
-    for k, v in override.items():
-        if k in base and isinstance(base[k], dict) and isinstance(v, dict):
-            deep_merge(base[k], v)
-        else:
-            base[k] = v
-
-def expand_paths(obj):
-    if isinstance(obj, str):
-        return obj.replace('${HOME}', os.path.expanduser('~'))
-    if isinstance(obj, list):
-        return [expand_paths(i) for i in obj]
-    if isinstance(obj, dict):
-        return {k: expand_paths(v) for k, v in obj.items()}
-    return obj
-
-agents, target = sys.argv[1], sys.argv[2]
-
-with open(os.path.join(agents, 'mcp', 'servers.json')) as f:
-    servers = json.load(f)
-
-for path in [
-    os.path.join(agents, 'mcp', 'claude.servers.json'),
-    os.path.join(agents, 'mcp', 'secrets.json'),
-    os.path.join(agents, 'mcp', 'claude.secrets.json'),
-]:
-    if os.path.exists(path):
-        with open(path) as f:
-            overrides = json.load(f)
-        for name, cfg in overrides.items():
-            servers.setdefault(name, {})
-            deep_merge(servers[name], cfg)
-
-doc = {}
-if os.path.exists(target):
-    with open(target) as f:
-        doc = json.load(f)
-existing = doc.get('mcpServers', {})
-
-def clean(name, cfg):
-    result = {k: v for k, v in cfg.items() if k != 'disabled'}
-    if 'disabled' in cfg:
-        result['disabled'] = cfg['disabled']
-    elif name in existing and 'disabled' in existing[name]:
-        result['disabled'] = existing[name]['disabled']
-    else:
-        result['disabled'] = True
-    return result
-
-servers = expand_paths(servers)
-doc['mcpServers'] = {k: clean(k, v) for k, v in servers.items()}
-
-with open(target, 'w') as f:
-    json.dump(doc, f, indent=2)
-    f.write('\n')
-PYEOF
-  echo "  updated  $target (mcpServers)"
-}
-
-sync_mcp_opencode() {
-  # Merges mcp/servers.json + mcp/opencode.servers.json + mcp/secrets.json + mcp/opencode.secrets.json into ~/.config/opencode/opencode.json mcp.
-  # Also sets instructions to point at the agents context directory.
-  # Transforms canonical format → OpenCode format:
-  #   command + args → command array, env → environment, type "stdio" → "local"
-  local target="$HOME/.config/opencode/opencode.json"
-  python3 - "$AGENTS" "$target" <<'PYEOF'
-import json, sys, os
-
-def deep_merge(base, override):
-    for k, v in override.items():
-        if k in base and isinstance(base[k], dict) and isinstance(v, dict):
-            deep_merge(base[k], v)
-        else:
-            base[k] = v
-
-def expand_paths(obj):
-    if isinstance(obj, str):
-        return obj.replace('${HOME}', os.path.expanduser('~'))
-    if isinstance(obj, list):
-        return [expand_paths(i) for i in obj]
-    if isinstance(obj, dict):
-        return {k: expand_paths(v) for k, v in obj.items()}
-    return obj
-
-agents, target = sys.argv[1], sys.argv[2]
-
-with open(os.path.join(agents, 'mcp', 'servers.json')) as f:
-    servers = json.load(f)
-
-for path in [
-    os.path.join(agents, 'mcp', 'opencode.servers.json'),
-    os.path.join(agents, 'mcp', 'secrets.json'),
-    os.path.join(agents, 'mcp', 'opencode.secrets.json'),
-]:
-    if os.path.exists(path):
-        with open(path) as f:
-            overrides = json.load(f)
-        for name, cfg in overrides.items():
-            servers.setdefault(name, {})
-            deep_merge(servers[name], cfg)
-
-for name in servers:
-    servers[name].setdefault('disabled', True)
-
-def to_opencode(cfg):
-    result = {}
-    t = cfg.get('type', 'stdio')
-    result['type'] = 'local' if t == 'stdio' else t
-    cmd = cfg.get('command', '')
-    args = cfg.get('args', [])
-    result['command'] = ([cmd] if cmd else []) + args
-    env = cfg.get('env', {})
-    if env:
-        result['environment'] = env
-    for k, v in cfg.items():
-        if k not in ('type', 'command', 'args', 'env', 'disabled'):
-            result[k] = v
-    return result
-
-doc = {}
-if os.path.exists(target):
-    with open(target) as f:
-        doc = json.load(f)
-
-servers = expand_paths(servers)
-doc['mcp'] = {name: to_opencode(cfg) for name, cfg in servers.items() if not cfg.get('disabled', True)}
-
-# Point instructions at the agents context and skills directories
-doc['instructions'] = [
-    os.path.join(agents, 'context', '*.md'),
-    os.path.join(agents, 'skills', '*', 'SKILL.md'),
-]
-
-os.makedirs(os.path.dirname(target), exist_ok=True)
-with open(target, 'w') as f:
-    json.dump(doc, f, indent=2)
-    f.write('\n')
-PYEOF
-  echo "  updated  $target (mcp + instructions)"
-}
-
-sync_mcp_kiro() {
-  # Merges mcp/servers.json + mcp/kiro.servers.json + mcp/secrets.json + mcp/kiro.secrets.json into ~/.kiro/settings/mcp.json.
-  local target="$HOME/.kiro/settings/mcp.json"
-  python3 - "$AGENTS" "$target" <<'PYEOF'
-import json, sys, os
-
-def deep_merge(base, override):
-    for k, v in override.items():
-        if k in base and isinstance(base[k], dict) and isinstance(v, dict):
-            deep_merge(base[k], v)
-        else:
-            base[k] = v
-
-def expand_paths(obj):
-    if isinstance(obj, str):
-        return obj.replace('${HOME}', os.path.expanduser('~'))
-    if isinstance(obj, list):
-        return [expand_paths(i) for i in obj]
-    if isinstance(obj, dict):
-        return {k: expand_paths(v) for k, v in obj.items()}
-    return obj
-
-agents, target = sys.argv[1], sys.argv[2]
-
-with open(os.path.join(agents, 'mcp', 'servers.json')) as f:
-    servers = json.load(f)
-
-for path in [
-    os.path.join(agents, 'mcp', 'kiro.servers.json'),
-    os.path.join(agents, 'mcp', 'secrets.json'),
-    os.path.join(agents, 'mcp', 'kiro.secrets.json'),
-]:
-    if os.path.exists(path):
-        with open(path) as f:
-            overrides = json.load(f)
-        for name, cfg in overrides.items():
-            servers.setdefault(name, {})
-            deep_merge(servers[name], cfg)
-
-existing_kiro = {}
-if os.path.exists(target):
-    with open(target) as f:
-        existing_kiro = json.load(f).get('mcpServers', {})
-
-def clean_kiro(name, cfg):
-    result = {k: v for k, v in cfg.items() if k != 'disabled'}
-    if 'disabled' in cfg:
-        result['disabled'] = cfg['disabled']
-    elif name in existing_kiro:
-        # Preserve existing state; absent key means enabled (False)
-        result['disabled'] = existing_kiro[name].get('disabled', False)
-    else:
-        result['disabled'] = True
-    return result
-
-servers = expand_paths(servers)
-doc = {'mcpServers': {k: clean_kiro(k, v) for k, v in servers.items()}}
-
-os.makedirs(os.path.dirname(target), exist_ok=True)
-with open(target, 'w') as f:
-    json.dump(doc, f, indent=2)
-    f.write('\n')
-PYEOF
-  echo "  updated  $target"
-}
-
-HARNESS="${1:-all}"
-
-run_claude() {
-  echo "=== Claude ==="
-  for d in "$HOME/.claude/skills" "$HOME/.claude/rules"; do
-    [ -L "$d" ] && [ ! -e "$d" ] && rm "$d" && echo "  pruned  $d (broken symlink)"
-  done
-  mkdir -p "$HOME/.claude/skills" "$HOME/.claude/rules"
-  prune "$HOME/.claude/skills"
-  prune "$HOME/.claude/rules"
-  while IFS= read -r skill; do
-    link "$skill" "$HOME/.claude/skills/$(basename "$skill")"
-  done < <(find "$AGENTS/skills" -mindepth 1 -maxdepth 1 -type d)
-  for ctx in "$AGENTS/context"/*.md; do
-    link "$ctx" "$HOME/.claude/rules/$(basename "$ctx")"
-  done
-  sync_mcp_claude
-}
-
-run_kiro() {
-  echo "=== Kiro ==="
-  for d in "$HOME/.kiro/skills" "$HOME/.kiro/steering"; do
-    [ -L "$d" ] && [ ! -e "$d" ] && rm "$d" && echo "  pruned  $d (broken symlink)"
-  done
-  mkdir -p "$HOME/.kiro/skills" "$HOME/.kiro/steering"
-  prune "$HOME/.kiro/skills"
-  prune "$HOME/.kiro/steering"
-  while IFS= read -r skill; do
-    link "$skill" "$HOME/.kiro/skills/$(basename "$skill")"
-  done < <(find "$AGENTS/skills" -mindepth 1 -maxdepth 1 -type d)
-  for ctx in "$AGENTS/context"/*.md; do
-    link "$ctx" "$HOME/.kiro/steering/$(basename "$ctx")"
-  done
-  sync_mcp_kiro
-}
-
-run_opencode() {
-  echo "=== OpenCode ==="
-  sync_mcp_opencode
-}
-
-case "$HARNESS" in
-  claude)    run_claude ;;
-  kiro)      run_kiro ;;
-  opencode)  run_opencode ;;
-  all)       run_claude; run_kiro; run_opencode ;;
-  *)         echo "Usage: setup.sh [claude|kiro|opencode|all]"; exit 1 ;;
-esac
-
-echo ""
-echo "Done."
+if __name__ == '__main__':
+    main()
