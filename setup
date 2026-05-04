@@ -324,7 +324,17 @@ def main():
         'opencode': run_opencode,
     }
 
-    harnesses = runners.keys() if args.harness == 'all' else [args.harness]
+    binaries = {'claude': 'claude', 'kiro': 'kiro-cli', 'opencode': 'opencode'}
+
+    if args.harness == 'all':
+        harnesses = [h for h in runners if shutil.which(binaries[h])]
+        skipped = [h for h in runners if h not in harnesses]
+        if skipped:
+            print(f'Skipping (not installed): {", ".join(skipped)}')
+    else:
+        harnesses = [args.harness]
+        if not shutil.which(binaries[args.harness]):
+            print(f'WARNING: {args.harness} not found on PATH, running anyway')
     for h in harnesses:
         runners[h](yolo=args.yolo)
 
