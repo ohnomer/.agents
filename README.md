@@ -1,88 +1,172 @@
-# ~/.agents
+# .agents
 
-Shared configuration, context, and MCP server management for AI coding agents (Claude, Kiro, OpenCode).
+Unified configuration for AI coding agents. One repo to manage context, skills, and MCP servers across [Claude Code](https://code.claude.com/docs), [Kiro](https://kiro.dev/cli/), and [OpenCode](https://github.com/opencode-ai/opencode).
+
+Fork this repo, commit your own configuration, and run `setup` to wire everything into your local agent harnesses.
+
+⚠️ **Your fork will contain personal context, conventions, and potentially sensitive configuration. Consider making it a private repository.**
+
+## Installation
+
+```bash
+# Fork this repo on GitHub, then clone your fork
+git clone git@github.com:YOUR_USER/.agents.git ~/.agents
+
+# Run setup (installs symlinks and merges MCP config)
+~/.agents/setup
+```
+
+`setup` will:
+1. Create a `~/.agents` symlink if you cloned elsewhere
+2. Symlink skills into each harness's skills directory
+3. Symlink context files into each harness's rules/steering directory
+4. Merge MCP server config (with secrets) into each harness's native format
+
+Re-run `setup` after any change to this repo.
+
+### Prerequisites
+
+macOS or Linux. Windows is not supported.
+
+Python 3 and at least one of these agents installed:
+- [Claude Code](https://code.claude.com/docs) (`claude`)
+- [Kiro CLI](https://kiro.dev/cli/) (`kiro-cli`)
+- [OpenCode](https://github.com/opencode-ai/opencode) (`opencode`)
+
+`setup` auto-detects which are installed and skips the rest. You can also target one:
+
+```bash
+~/.agents/setup claude
+~/.agents/setup kiro
+~/.agents/setup opencode
+```
+
+### The `--yolo` flag
+
+```bash
+~/.agents/setup --yolo
+```
+
+This persistently disables permission prompts in all harnesses (auto-approves tool use). It requires double confirmation. Use at your own risk.
 
 ## Structure
 
 ```
 ~/.agents/
-├── AGENTS.md           — this file
-├── setup            — wires everything into each harness (run after cloning or editing)
-├── mcp/                — MCP server definitions, per-harness config and secrets
-│   ├── servers.json            — canonical server definitions
-│   ├── claude.servers.json     — Claude-specific config overrides
-│   ├── kiro.servers.json       — Kiro-specific config overrides
-│   ├── opencode.servers.json   — OpenCode-specific config overrides
-│   ├── secrets.json            — API keys and secrets, all harnesses (gitignored)
-│   ├── secrets.json.example
-│   ├── claude.secrets.json     — Claude-specific secrets (gitignored, optional)
-│   ├── kiro.secrets.json       — Kiro-specific secrets (gitignored, optional)
-│   └── opencode.secrets.json   — OpenCode-specific secrets (gitignored, optional)
-├── context/            — shared context files loaded each session
-├── harnesses/          — symlinks to each agent's config directory
-│   ├── claude   -> ~/.claude
-│   ├── kiro     -> ~/.kiro
-│   └── opencode -> ~/.config/opencode
-└── skills/             — reusable skill definitions (SKILL.md format)
+├── setup               — wires everything into each harness
+├── context/            — shared context loaded every session
+│   └── CONTEXT.md      — standing directives, conventions, project notes
+├── skills/             — reusable skill definitions (SKILL.md per directory)
+│   └── weather/        — example skill
+├── mcp/                — MCP server definitions and secrets
+│   ├── servers.json    — canonical server definitions (committed)
+│   ├── secrets.json    — API keys for servers (gitignored)
+│   └── *.servers.json  — per-harness overrides
+├── config/             — harness-specific config (--yolo settings, etc.)
+└── harnesses/          — auto-generated symlinks to ~/.claude, ~/.kiro, ~/.config/opencode
 ```
 
-## setup
+## Usage
 
-The setup script wires this repo into each harness. Run it after cloning, adding skills/context, or editing MCP configs:
+### Adding context
+
+Drop `.md` files in `context/`. These are loaded into every agent session as standing instructions — use them for coding conventions, project architecture, team preferences, etc.
 
 ```bash
-~/.agents/setup            # all harnesses
-~/.agents/setup kiro       # just kiro
-~/.agents/setup claude     # just claude
-~/.agents/setup opencode   # just opencode
+echo "Always use TypeScript strict mode." > ~/.agents/context/typescript.md
+~/.agents/setup
 ```
 
-What it does:
-- **~/.agents symlink**: creates `~/.agents` pointing to wherever the repo is cloned (if not already there)
-- **Skills**: symlinks each `skills/*/` directory into the harness's skills folder
-- **Context**: symlinks each `context/*.md` into the harness's rules/steering folder
-- **MCP**: merges `servers.json` + `<harness>.servers.json` + `secrets.json` + `<harness>.secrets.json` into each harness's native MCP config
+### Adding skills
 
-## mcp/
+Create a directory under `skills/` with a `SKILL.md` file:
 
-Layered MCP server configuration. Each layer is merged in order:
+```bash
+mkdir ~/.agents/skills/deploy
+cat > ~/.agents/skills/deploy/SKILL.md << 'EOF'
+---
+name: deploy
+description: Deploy services to production via CI/CD pipelines.
+---
 
-1. `servers.json` — canonical server definitions (command, args, env, type)
-2. `<harness>.servers.json` — per-harness config overrides, same schema as `servers.json`
-3. `secrets.json` — API keys and secrets, keyed by server name, applied to all harnesses (gitignored)
-4. `<harness>.secrets.json` — harness-specific secret overrides, same schema (gitignored, optional)
+# Deploy
 
-Overrides use deep merge, so you only need to specify the fields you want to change.
+## How to Use
+...
+EOF
 
-### Per-harness behaviour
+~/.agents/setup
+```
 
-| Harness | Default state | State persistence | Target file |
-|---------|--------------|-------------------|-------------|
-| Claude | All servers **loaded and enabled** | Per-workspace (`disabledMcpServers` array in `~/.claude.json` under the project path key) | `~/.claude.json` (mcpServers) |
-| Kiro | All servers **loaded but disabled** (`disabled: true`) | Global (`disabled` key in `~/.kiro/settings/mcp.json`) | `~/.kiro/settings/mcp.json` (mcpServers) |
-| OpenCode | Only **explicitly enabled** servers loaded | Not persisted — re-runs `setup` to apply state from `opencode.servers.json` | `~/.config/opencode/opencode.json` (mcp) |
+Skills are agent-readable instructions that teach the agent how to perform specific tasks.
 
-Key differences:
-- **Claude**: `disabled: true` in the server definition is **ignored** by Claude Code. Enable/disable is controlled per-workspace via the `/mcp` dialog, which writes to `disabledMcpServers` for the current directory. There is no global disable — to suppress a server everywhere you must remove it from `mcpServers` entirely.
-- **Kiro**: `disabled: true` on the server entry is respected globally. State is shared across all projects.
-- **OpenCode**: Disabled servers are excluded from the config file entirely. State does not persist properly across `setup` runs — manage it via `opencode.servers.json`. **Servers default to disabled** — omitting `disabled` is the same as `disabled: true`. To enable a server you must explicitly set `"disabled": false`.
+### Adding MCP servers
+
+Add server definitions to `mcp/servers.json`:
+
+```json
+{
+  "my-server": {
+    "command": "npx",
+    "args": ["my-mcp-server@latest"],
+    "env": {}
+  }
+}
+```
+
+If the server needs secrets, create `mcp/secrets.json` (gitignored):
+
+```json
+{
+  "my-server": {
+    "env": {
+      "API_KEY": "sk-..."
+    }
+  }
+}
+```
+
+Then run `~/.agents/setup` to merge into all harnesses.
+
+## MCP configuration
+
+Server config is layered and merged in order:
+
+1. `mcp/servers.json` — base definitions (committed)
+2. `mcp/<harness>.servers.json` — per-harness overrides (committed)
+3. `mcp/secrets.json` — secrets for all harnesses (gitignored)
+4. `mcp/<harness>.secrets.json` — per-harness secrets (gitignored)
+
+Later layers deep-merge into earlier ones, so overrides only need the fields they change.
 
 ### Enabling/disabling servers
 
-For **Claude**, use the `/mcp` dialog interactively. Running `setup` preserves whatever state is in `~/.claude.json`. To suppress a server across all workspaces, remove it from `servers.json` (or omit it from `claude.servers.json` if it's Claude-only).
+New servers default to **disabled**. Each harness handles this differently:
 
-For **Kiro**, edit `~/.kiro/settings/mcp.json` directly (remove the `disabled` key to enable, or set `"disabled": true`) and Shift+Tab to reload. Running `setup` preserves whatever state is in the target file.
+| Harness | How to enable | State stored in |
+|---------|---------------|-----------------|
+| Claude | `/mcp` dialog in-session | `~/.claude.json` (per-workspace) |
+| Kiro | Edit `~/.kiro/settings/mcp.json`, remove `disabled` key | `~/.kiro/settings/mcp.json` |
+| OpenCode | Set `"disabled": false` in `mcp/opencode.servers.json`, re-run setup | `~/.config/opencode/opencode.json` |
 
-For **OpenCode**, set `"disabled": false` in `opencode.servers.json` to enable, or `"disabled": true` (or omit the entry) to disable. Re-run `setup opencode` to apply. Disabled servers are not written to the config at all.
+`setup` preserves existing enable/disable state for Claude and Kiro. For OpenCode, state is derived from config on every run.
 
-## context/
+## How it maps to each harness
 
-Markdown files containing standing directives that apply across all projects. Symlinked to `~/.kiro/steering/` for Kiro and `~/.claude/rules/` for Claude. OpenCode reads them via the `instructions` field in its config.
+| What | Claude | Kiro | OpenCode |
+|------|--------|------|----------|
+| Context | `~/.claude/rules/*.md` | `~/.kiro/steering/*.md` | `instructions` field in config |
+| Skills | `~/.claude/skills/*/` | `~/.kiro/skills/*/` | `instructions` field in config |
+| MCP | `~/.claude.json` → `mcpServers` | `~/.kiro/settings/mcp.json` → `mcpServers` | `~/.config/opencode/opencode.json` → `mcp` |
 
-## harnesses/
+## Roadmap
 
-Symlinks to each agent's config directory for easy navigation.
+Potential harness support:
 
-## skills/
+- [ ] [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+- [ ] [Codex](https://github.com/openai/codex)
+- [ ] Other
 
-Subdirectories each containing a `SKILL.md` file. `setup` symlinks these into each harness's skills directory automatically.
+## License
+
+MIT

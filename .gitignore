@@ -1,3 +1,4 @@
 **/.DS_Store
 mcp/secrets.json
 mcp/*.secrets.json
+harnesses/

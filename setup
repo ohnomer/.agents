@@ -290,6 +290,33 @@ def ensure_home_symlink():
         print(f'~/.agents -> {AGENTS} (linked)')
 
 
+def ensure_harness_symlinks():
+    """Create harnesses/ symlinks to each agent's config directory."""
+    harness_dir = AGENTS / 'harnesses'
+    os.makedirs(harness_dir, exist_ok=True)
+    targets = {
+        'claude': (HOME / '.claude', 'claude'),
+        'kiro': (HOME / '.kiro', 'kiro-cli'),
+        'opencode': (HOME / '.config' / 'opencode', 'opencode'),
+    }
+    count = 0
+    for name, (target, binary) in targets.items():
+        dst = harness_dir / name
+        if not shutil.which(binary):
+            if dst.is_symlink():
+                os.remove(dst)
+            continue
+        target_str = str(target)
+        if dst.is_symlink() and os.readlink(str(dst)) == target_str:
+            count += 1
+        else:
+            if dst.exists() or dst.is_symlink():
+                os.remove(dst)
+            os.symlink(target_str, dst)
+            count += 1
+    print(f'harnesses/ -> {count} symlinks created')
+
+
 def main():
     parser = argparse.ArgumentParser(description='Wire agent harnesses to ~/.agents')
     parser.add_argument('harness', nargs='?', default='all',
@@ -317,6 +344,7 @@ def main():
         print()
 
     ensure_home_symlink()
+    ensure_harness_symlinks()
 
     runners = {
         'claude': run_claude,
