@@ -126,7 +126,7 @@ def link_context(dest_dir):
         link(ctx, Path(dest_dir) / ctx.name)
 
 
-def link_prompts(dest_dir, ext='.prompt.md'):
+def link_prompts(dest_dir, ext='.md'):
     """Symlink prompts/*.prompt.md into dest_dir, adjusting extension per harness."""
     prompts_dir = AGENTS / 'prompts'
     if not prompts_dir.is_dir():
@@ -134,12 +134,14 @@ def link_prompts(dest_dir, ext='.prompt.md'):
     os.makedirs(dest_dir, exist_ok=True)
     prune(dest_dir)
     for prompt in sorted(prompts_dir.glob('*.prompt.md')):
-        # Remap extension: opsx-explore.prompt.md -> opsx-explore.prompt.md or opsx-explore.md
-        if ext == '.prompt.md':
-            dest_name = prompt.name
-        else:
-            dest_name = prompt.name.replace('.prompt.md', ext)
-        link(prompt, Path(dest_dir) / dest_name)
+        dest_name = prompt.name.replace('.prompt.md', ext)
+        dest = Path(dest_dir) / dest_name
+        # Remove stale symlink with old name if extension mapping changed
+        old_name = Path(dest_dir) / prompt.name
+        if old_name != dest and old_name.is_symlink():
+            old_name.unlink()
+            print(f'  pruned  {old_name} (renamed to {dest_name})')
+        link(prompt, dest)
 
 
 def merge_config(src_path, target_path):
@@ -280,7 +282,7 @@ def run_kiro(yolo=False):
             print(f'  pruned  {d} (broken symlink)')
     link_skills(HOME / '.kiro' / 'skills')
     link_context(HOME / '.kiro' / 'steering')
-    link_prompts(HOME / '.kiro' / 'prompts')
+    link_prompts(HOME / '.kiro' / 'prompts', ext='.md')
     sync_mcp_kiro()
     if yolo:
         yolo_kiro()
