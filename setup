@@ -126,6 +126,22 @@ def link_context(dest_dir):
         link(ctx, Path(dest_dir) / ctx.name)
 
 
+def link_prompts(dest_dir, ext='.prompt.md'):
+    """Symlink prompts/*.prompt.md into dest_dir, adjusting extension per harness."""
+    prompts_dir = AGENTS / 'prompts'
+    if not prompts_dir.is_dir():
+        return
+    os.makedirs(dest_dir, exist_ok=True)
+    prune(dest_dir)
+    for prompt in sorted(prompts_dir.glob('*.prompt.md')):
+        # Remap extension: opsx-explore.prompt.md -> opsx-explore.prompt.md or opsx-explore.md
+        if ext == '.prompt.md':
+            dest_name = prompt.name
+        else:
+            dest_name = prompt.name.replace('.prompt.md', ext)
+        link(prompt, Path(dest_dir) / dest_name)
+
+
 def merge_config(src_path, target_path):
     """Deep merge a JSON config file into an existing target."""
     overrides = read_json(src_path)
@@ -250,6 +266,7 @@ def run_claude(yolo=False):
             print(f'  pruned  {d} (broken symlink)')
     link_skills(HOME / '.claude' / 'skills')
     link_context(HOME / '.claude' / 'rules')
+    link_prompts(HOME / '.claude' / 'commands', ext='.md')
     sync_mcp_claude()
     if yolo:
         yolo_claude()
@@ -263,6 +280,7 @@ def run_kiro(yolo=False):
             print(f'  pruned  {d} (broken symlink)')
     link_skills(HOME / '.kiro' / 'skills')
     link_context(HOME / '.kiro' / 'steering')
+    link_prompts(HOME / '.kiro' / 'prompts')
     sync_mcp_kiro()
     if yolo:
         yolo_kiro()
@@ -270,6 +288,7 @@ def run_kiro(yolo=False):
 
 def run_opencode(yolo=False):
     print('=== OpenCode ===')
+    link_prompts(HOME / '.config' / 'opencode' / 'commands', ext='.md')
     sync_mcp_opencode()
     if yolo:
         yolo_opencode()

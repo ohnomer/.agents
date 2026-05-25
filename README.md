@@ -20,7 +20,8 @@ git clone git@github.com:YOUR_USER/.agents.git ~/.agents
 1. Create a `~/.agents` symlink if you cloned elsewhere
 2. Symlink skills into each harness's skills directory
 3. Symlink context files into each harness's rules/steering directory
-4. Merge MCP server config (with secrets) into each harness's native format
+4. Symlink prompts as slash commands into each harness's commands directory
+5. Merge MCP server config (with secrets) into each harness's native format
 
 Re-run `setup` after any change to this repo.
 
@@ -58,6 +59,8 @@ This persistently disables permission prompts in all harnesses (auto-approves to
 │   └── CONTEXT.md      — standing directives, conventions, project notes
 ├── skills/             — reusable skill definitions (SKILL.md per directory)
 │   └── weather/        — example skill
+├── prompts/            — slash command prompts distributed to each harness
+│   └── *.prompt.md     — prompt files (Kiro .prompt.md format)
 ├── mcp/                — MCP server definitions and secrets
 │   ├── servers.json    — canonical server definitions (committed)
 │   ├── secrets.json    — API keys for servers (gitignored)
@@ -99,6 +102,25 @@ EOF
 ```
 
 Skills are agent-readable instructions that teach the agent how to perform specific tasks.
+
+### Adding prompts
+
+Drop `.prompt.md` files in `prompts/`. These become slash commands in each harness (e.g., `opsx-explore.prompt.md` → `/opsx-explore`).
+
+Prompts use Kiro's native format — markdown with a `description` frontmatter field:
+
+```markdown
+---
+description: Enter explore mode - think through ideas and investigate problems
+---
+
+Your prompt instructions here...
+```
+
+`setup` adapts the file extension per harness:
+- **Kiro**: symlinked as-is (`.prompt.md`)
+- **Claude**: symlinked as `.md` into `~/.claude/commands/`
+- **OpenCode**: symlinked as `.md` into `~/.config/opencode/commands/`
 
 ### Adding MCP servers
 
@@ -157,6 +179,7 @@ New servers default to **disabled**. Each harness handles this differently:
 |------|--------|------|----------|
 | Context | `~/.claude/rules/*.md` | `~/.kiro/steering/*.md` | `instructions` field in config |
 | Skills | `~/.claude/skills/*/` | `~/.kiro/skills/*/` | `instructions` field in config |
+| Prompts | `~/.claude/commands/*.md` | `~/.kiro/prompts/*.prompt.md` | `~/.config/opencode/commands/*.md` |
 | MCP | `~/.claude.json` → `mcpServers` | `~/.kiro/settings/mcp.json` → `mcpServers` | `~/.config/opencode/opencode.json` → `mcp` |
 
 ## Roadmap
