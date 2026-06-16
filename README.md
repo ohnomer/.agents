@@ -60,7 +60,7 @@ This persistently disables permission prompts in all harnesses (auto-approves to
 ├── skills/             — reusable skill definitions (SKILL.md per directory)
 │   └── weather/        — example skill
 ├── prompts/            — slash command prompts distributed to each harness
-│   └── *.prompt.md     — prompt files (Kiro .prompt.md format)
+│   └── *.md            — prompt files (linked as *.prompt.md for Kiro)
 ├── mcp/                — MCP server definitions and secrets
 │   ├── servers.json    — canonical server definitions (committed)
 │   ├── secrets.json    — API keys for servers (gitignored)
@@ -105,7 +105,7 @@ Skills are agent-readable instructions that teach the agent how to perform speci
 
 ### Adding prompts
 
-Drop `.prompt.md` files in `prompts/`. These become slash commands in each harness (e.g., `opsx-explore.prompt.md` → `/opsx-explore`).
+Drop `.md` files in `prompts/`. These become slash commands in each harness (e.g., `opsx-explore.md` → `/opsx-explore`).
 
 Prompts use Kiro's native format — markdown with a `description` frontmatter field:
 
@@ -117,10 +117,10 @@ description: Enter explore mode - think through ideas and investigate problems
 Your prompt instructions here...
 ```
 
-`setup` adapts the file extension per harness:
-- **Kiro**: symlinked as-is (`.prompt.md`)
-- **Claude**: symlinked as `.md` into `~/.claude/commands/`
-- **OpenCode**: symlinked as `.md` into `~/.config/opencode/commands/`
+Files named `*.prompt.md` are also accepted (legacy Kiro convention). `setup` adapts the file name per harness:
+- **Kiro**: plain `.md` files are linked as `.prompt.md`; `.prompt.md` files keep their name
+- **Claude**: linked as `.md` (stripping `.prompt.md` to `.md` if needed)
+- **OpenCode**: linked as `.md` (stripping `.prompt.md` to `.md` if needed)
 
 ### Adding MCP servers
 

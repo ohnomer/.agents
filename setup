@@ -14,7 +14,6 @@ import json
 import os
 import shutil
 import sys
-from glob import glob
 from pathlib import Path
 
 AGENTS = Path(__file__).resolve().parent
@@ -126,21 +125,36 @@ def link_context(dest_dir):
         link(ctx, Path(dest_dir) / ctx.name)
 
 
-def link_prompts(dest_dir, ext='.md'):
-    """Symlink prompts/*.prompt.md into dest_dir, adjusting extension per harness."""
+def link_prompts(dest_dir, kiro=False):
+    """Symlink prompts/*.md into dest_dir.
+
+    For Kiro, .prompt.md files keep their original name; plain .md files are
+    renamed to .prompt.md so Kiro recognises them.
+    For all other harnesses, all prompts are linked as plain .md files.
+    """
     prompts_dir = AGENTS / 'prompts'
     if not prompts_dir.is_dir():
         return
     os.makedirs(dest_dir, exist_ok=True)
     prune(dest_dir)
-    for prompt in sorted(prompts_dir.glob('*.prompt.md')):
-        dest_name = prompt.name.replace('.prompt.md', ext)
+    for prompt in sorted(prompts_dir.glob('*.md')):
+        if kiro:
+            if prompt.name.endswith('.prompt.md'):
+                dest_name = prompt.name
+            else:
+                dest_name = prompt.stem + '.prompt.md'
+        else:
+            if prompt.name.endswith('.prompt.md'):
+                dest_name = prompt.name.replace('.prompt.md', '.md')
+            else:
+                dest_name = prompt.name
         dest = Path(dest_dir) / dest_name
         # Remove stale symlink with old name if extension mapping changed
-        old_name = Path(dest_dir) / prompt.name
-        if old_name != dest and old_name.is_symlink():
-            old_name.unlink()
-            print(f'  pruned  {old_name} (renamed to {dest_name})')
+        base = prompt.name[:-len('.prompt.md')] if prompt.name.endswith('.prompt.md') else prompt.stem
+        for old in Path(dest_dir).glob(f'{base}*'):
+            if old.is_symlink() and old != dest:
+                old.unlink()
+                print(f'  pruned  {old} (renamed to {dest_name})')
         link(prompt, dest)
 
 
@@ -268,7 +282,7 @@ def run_claude(yolo=False):
             print(f'  pruned  {d} (broken symlink)')
     link_skills(HOME / '.claude' / 'skills')
     link_context(HOME / '.claude' / 'rules')
-    link_prompts(HOME / '.claude' / 'commands', ext='.md')
+    link_prompts(HOME / '.claude' / 'commands')
     sync_mcp_claude()
     if yolo:
         yolo_claude()
@@ -282,7 +296,7 @@ def run_kiro(yolo=False):
             print(f'  pruned  {d} (broken symlink)')
     link_skills(HOME / '.kiro' / 'skills')
     link_context(HOME / '.kiro' / 'steering')
-    link_prompts(HOME / '.kiro' / 'prompts', ext='.md')
+    link_prompts(HOME / '.kiro' / 'prompts', kiro=True)
     sync_mcp_kiro()
     if yolo:
         yolo_kiro()
@@ -290,7 +304,7 @@ def run_kiro(yolo=False):
 
 def run_opencode(yolo=False):
     print('=== OpenCode ===')
-    link_prompts(HOME / '.config' / 'opencode' / 'commands', ext='.md')
+    link_prompts(HOME / '.config' / 'opencode' / 'commands')
     sync_mcp_opencode()
     if yolo:
         yolo_opencode()
