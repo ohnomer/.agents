@@ -6,7 +6,7 @@ Idempotent: skips anything already correctly symlinked.
 MCP: merges mcp/servers.json + mcp/<harness>.servers.json + mcp/secrets.json + mcp/<harness>.secrets.json
      into each harness's native MCP config location.
 
-Usage: setup [--yolo] [claude|kiro|opencode|all]
+Usage: setup [--yolo] [claude|kiro|opencode|antigravity|all]
 """
 
 import argparse
@@ -193,6 +193,30 @@ def sync_mcp_kiro():
     print(f'  updated  {target}')
 
 
+def sync_mcp_agy():
+    target = HOME / '.gemini' / 'config' / 'mcp_config.json'
+    servers = load_mcp_servers('antigravity')
+
+    doc = {}
+    if target.exists() and target.stat().st_size > 0:
+        doc = read_json(target)
+    existing = doc.get('mcpServers', {})
+
+    def clean(name, cfg):
+        result = {k: v for k, v in cfg.items() if k != 'disabled'}
+        if 'disabled' in cfg:
+            result['disabled'] = cfg['disabled']
+        elif name in existing:
+            result['disabled'] = existing[name].get('disabled', False)
+        else:
+            result['disabled'] = True
+        return result
+
+    doc['mcpServers'] = {k: clean(k, v) for k, v in servers.items()}
+    write_json(target, doc)
+    print(f'  updated  {target}')
+
+
 def sync_mcp_opencode():
     target = HOME / '.config' / 'opencode' / 'opencode.json'
     servers = load_mcp_servers('opencode')
@@ -282,6 +306,28 @@ def run_kiro(yolo=False):
         yolo_kiro()
 
 
+def yolo_agy():
+    target = HOME / '.gemini' / 'antigravity-cli' / 'settings.json'
+    merge_config(AGENTS / 'config' / 'antigravity' / 'settings.json', target)
+    print(f'  yolo  {target} (merged config/antigravity/settings.json)')
+
+
+def run_agy(yolo=False):
+    print('=== Agy ===')
+    config_dir = HOME / '.gemini' / 'config'
+    os.makedirs(config_dir, exist_ok=True)
+    # Global Customizations Root is ~/.gemini/config/
+    # agy loads AGENTS.md there as global rules
+    context_src = AGENTS / 'context' / 'CONTEXT.md'
+    if context_src.exists():
+        link(context_src, config_dir / 'AGENTS.md')
+    # Skills live in ~/.gemini/config/skills/
+    link_skills(config_dir / 'skills')
+    sync_mcp_agy()
+    if yolo:
+        yolo_agy()
+
+
 def run_opencode(yolo=False):
     print('=== OpenCode ===')
     link_prompts(HOME / '.config' / 'opencode' / 'commands')
@@ -313,6 +359,7 @@ def ensure_harness_symlinks():
         'claude': (HOME / '.claude', 'claude'),
         'kiro': (HOME / '.kiro', 'kiro-cli'),
         'opencode': (HOME / '.config' / 'opencode', 'opencode'),
+        'antigravity': (HOME / '.gemini', 'agy'),
     }
     count = 0
     for name, (target, binary) in targets.items():
@@ -335,7 +382,7 @@ def ensure_harness_symlinks():
 def main():
     parser = argparse.ArgumentParser(description='Wire agent harnesses to ~/.agents')
     parser.add_argument('harness', nargs='?', default='all',
-                        choices=['claude', 'kiro', 'opencode', 'all'])
+                        choices=['claude', 'kiro', 'opencode', 'antigravity', 'all'])
     parser.add_argument('--yolo', action='store_true',
                         help='Skip permission prompts in all harnesses')
     args = parser.parse_args()
@@ -365,9 +412,10 @@ def main():
         'claude': run_claude,
         'kiro': run_kiro,
         'opencode': run_opencode,
+        'antigravity': run_agy,
     }
 
-    binaries = {'claude': 'claude', 'kiro': 'kiro-cli', 'opencode': 'opencode'}
+    binaries = {'claude': 'claude', 'kiro': 'kiro-cli', 'opencode': 'opencode', 'antigravity': 'agy'}
 
     if args.harness == 'all':
         harnesses = [h for h in runners if shutil.which(binaries[h])]
