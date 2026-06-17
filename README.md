@@ -33,6 +33,7 @@ Python 3 and at least one of these agents installed:
 - [Claude Code](https://code.claude.com/docs) (`claude`)
 - [Kiro CLI](https://kiro.dev/cli/) (`kiro-cli`)
 - [OpenCode](https://github.com/opencode-ai/opencode) (`opencode`)
+- [Antigravity](https://antigravity.google/) (`agy`) — Google Antigravity CLI, successor to Gemini CLI
 
 `setup` auto-detects which are installed and skips the rest. You can also target one:
 
@@ -40,6 +41,7 @@ Python 3 and at least one of these agents installed:
 ~/.agents/setup claude
 ~/.agents/setup kiro
 ~/.agents/setup opencode
+~/.agents/setup antigravity
 ```
 
 ### The `--yolo` flag
@@ -170,23 +172,23 @@ New servers default to **disabled**. Each harness handles this differently:
 | Claude | `/mcp` dialog in-session | `~/.claude.json` (per-workspace) |
 | Kiro | Edit `~/.kiro/settings/mcp.json`, remove `disabled` key | `~/.kiro/settings/mcp.json` |
 | OpenCode | Set `"disabled": false` in `mcp/opencode.servers.json`, re-run setup | `~/.config/opencode/opencode.json` |
+| Antigravity | Remove `disabled` key from `~/.gemini/config/mcp_config.json` | `~/.gemini/config/mcp_config.json` |
 
-`setup` preserves existing enable/disable state for Claude and Kiro. For OpenCode, state is derived from config on every run.
+`setup` preserves existing enable/disable state for Claude, Kiro, and Antigravity. For OpenCode, state is derived from config on every run.
 
 ## How it maps to each harness
 
-| What | Claude | Kiro | OpenCode |
-|------|--------|------|----------|
-| Context | `~/.claude/rules/*.md` | `~/.kiro/steering/*.md` | `instructions` field in config |
-| Skills | `~/.claude/skills/*/` | `~/.kiro/skills/*/` | `instructions` field in config |
-| Prompts | `~/.claude/commands/*.md` | `~/.kiro/prompts/*.prompt.md` | `~/.config/opencode/commands/*.md` |
-| MCP | `~/.claude.json` → `mcpServers` | `~/.kiro/settings/mcp.json` → `mcpServers` | `~/.config/opencode/opencode.json` → `mcp` |
+| What | Claude | Kiro | OpenCode | Antigravity |
+|------|--------|------|----------|-------------|
+| Context | `~/.claude/rules/*.md` | `~/.kiro/steering/*.md` | `instructions` field in config | `~/.gemini/config/AGENTS.md` (single file; CONTEXT.md linked) |
+| Skills | `~/.claude/skills/*/` | `~/.kiro/skills/*/` | `instructions` field in config | `~/.gemini/config/skills/*/` |
+| Prompts | `~/.claude/commands/*.md` | `~/.kiro/prompts/*.prompt.md` | `~/.config/opencode/commands/*.md` | — (not supported) |
+| MCP | `~/.claude.json` → `mcpServers` | `~/.kiro/settings/mcp.json` → `mcpServers` | `~/.config/opencode/opencode.json` → `mcp` | `~/.gemini/config/mcp_config.json` → `mcpServers` |
 
 ## Roadmap
 
 Potential harness support:
 
-- [ ] [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - [ ] [Codex](https://github.com/openai/codex)
 - [ ] Other
 
