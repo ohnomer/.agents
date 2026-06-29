@@ -61,7 +61,7 @@ open(f,'w').write(json.dumps(d,indent=2)+'\n')
 "
 ```
 
-Replace `SERVERNAME` with the server key (e.g. `playwright`). Shift-tab to cycle agents and reload.
+Replace `SERVERNAME` with the server key (e.g. `playwright`). Changes hot-reload automatically (Kiro 2.10+).
 
 ### OpenCode
 `opencode.servers.json` controls which servers are loaded. The setup script defaults all servers to `disabled: true` — **omitting `disabled` is the same as `disabled: true`**. To enable a server you must explicitly set `"disabled": false`.
@@ -105,5 +105,5 @@ cat ~/.agents/mcp/opencode.servers.json
 | Harness | How to reload |
 |---------|---------------|
 | **Claude** | `/reload-plugins` in the session |
-| **Kiro** | Shift-tab to cycle agents (e.g. to planning and back) |
+| **Kiro** | Changes hot-reload automatically (Kiro 2.10+) |
 | **OpenCode** | Full restart required (no mid-session reload yet) |
