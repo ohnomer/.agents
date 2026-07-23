@@ -9,5 +9,13 @@
     "file://.kiro/steering/**/*.md",
     "skill://~/.kiro/skills/*/SKILL.md",
     "skill://.kiro/skills/*/SKILL.md"
-  ]
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "all",
+        "effect": "allow"
+      }
+    ]
+  }
 }
