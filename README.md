@@ -34,6 +34,15 @@ Python 3 and at least one of these agents installed:
 - [Kiro CLI](https://kiro.dev/cli/) (`kiro-cli`)
 - [OpenCode](https://github.com/opencode-ai/opencode) (`opencode`)
 - [Antigravity](https://antigravity.google/) (`agy`) — Google Antigravity CLI, successor to Gemini CLI
+- [Codex](https://github.com/openai/codex) (`codex`) — OpenAI Codex CLI
+
+On Python < 3.11, Codex support requires the TOML parser backport:
+
+```bash
+pip install tomli
+```
+
+(Python 3.11+ has `tomllib` in the standard library and needs nothing extra.)
 
 `setup` auto-detects which are installed and skips the rest. You can also target one:
 
@@ -42,6 +51,7 @@ Python 3 and at least one of these agents installed:
 ~/.agents/setup kiro
 ~/.agents/setup opencode
 ~/.agents/setup antigravity
+~/.agents/setup codex
 ```
 
 ### The `--yolo` flag
@@ -178,18 +188,17 @@ New servers default to **disabled**. Each harness handles this differently:
 
 ## How it maps to each harness
 
-| What | Claude | Kiro | OpenCode | Antigravity |
-|------|--------|------|----------|-------------|
-| Context | `~/.claude/rules/*.md` | `~/.kiro/steering/*.md` | `instructions` field in config | `~/.gemini/config/AGENTS.md` (single file; CONTEXT.md linked) |
-| Skills | `~/.claude/skills/*/` | `~/.kiro/skills/*/` | `instructions` field in config | `~/.gemini/config/skills/*/` |
-| Prompts | `~/.claude/commands/*.md` | `~/.kiro/prompts/*.prompt.md` | `~/.config/opencode/commands/*.md` | — (not supported) |
-| MCP | `~/.claude.json` → `mcpServers` | `~/.kiro/settings/mcp.json` → `mcpServers` | `~/.config/opencode/opencode.json` → `mcp` | `~/.gemini/config/mcp_config.json` → `mcpServers` |
+| What | Claude | Kiro | OpenCode | Antigravity | Codex |
+|------|--------|------|----------|-------------|-------|
+| Context | `~/.claude/rules/*.md` | `~/.kiro/steering/*.md` | `instructions` field in config | `~/.gemini/config/AGENTS.md` (single file; CONTEXT.md linked) | `~/.codex/AGENTS.md` (single file; CONTEXT.md linked) |
+| Skills | `~/.claude/skills/*/` | `~/.kiro/skills/*/` | `instructions` field in config | `~/.gemini/config/skills/*/` | `skills.config` entries in `~/.codex/config.toml` (resolved paths) |
+| Prompts | `~/.claude/commands/*.md` | `~/.kiro/prompts/*.prompt.md` | `~/.config/opencode/commands/*.md` | — (not supported) | `~/.codex/commands/*.md` |
+| MCP | `~/.claude.json` → `mcpServers` | `~/.kiro/settings/mcp.json` → `mcpServers` | `~/.config/opencode/opencode.json` → `mcp` | `~/.gemini/config/mcp_config.json` → `mcpServers` | `~/.codex/config.toml` → `mcp_servers` |
 
 ## Roadmap
 
 Potential harness support:
 
-- [ ] [Codex](https://github.com/openai/codex)
 - [ ] Other
 
 ## License
