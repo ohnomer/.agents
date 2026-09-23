@@ -481,7 +481,7 @@ def sync_skills_codex():
     kept = []
     for entry in entries:
         path = entry.get('path', '') if isinstance(entry, dict) else str(entry)
-        if str(Path(path).resolve()).startswith(stale_root):
+        if str(Path(path).resolve()).startswith(stale_root + os.sep):
             continue
         kept.append(entry)
 

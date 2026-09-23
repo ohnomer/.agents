@@ -183,8 +183,9 @@ New servers default to **disabled**. Each harness handles this differently:
 | Kiro | Edit `~/.kiro/settings/mcp.json`, remove `disabled` key | `~/.kiro/settings/mcp.json` |
 | OpenCode | Set `"disabled": false` in `mcp/opencode.servers.json`, re-run setup | `~/.config/opencode/opencode.json` |
 | Antigravity | Remove `disabled` key from `~/.gemini/config/mcp_config.json` | `~/.gemini/config/mcp_config.json` |
+| Codex | Set `enabled = true` under the server's `[mcp_servers.<name>]` entry in `~/.codex/config.toml`, re-run setup | `~/.codex/config.toml` |
 
-`setup` preserves existing enable/disable state for Claude, Kiro, and Antigravity. For OpenCode, state is derived from config on every run.
+`setup` preserves existing enable/disable state for Claude, Kiro, Antigravity, and Codex. For OpenCode, state is derived from config on every run.
 
 ## How it maps to each harness
 
