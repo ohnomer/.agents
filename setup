@@ -59,12 +59,24 @@ def write_json(path, doc):
 
 
 def read_toml(path):
-    """Read a TOML file into a dict. Returns {} if the file does not exist."""
+    """Read a TOML file into a dict. Returns {} if the file does not exist.
+
+    Codex writes non-standard TOML table headers like [projects./path/to/dir]
+    that contain bare slashes. Standard tomllib rejects these. Strip such
+    sections before parsing so the rest of the file is still readable.
+    """
     path = Path(path)
     if not path.exists() or path.stat().st_size == 0:
         return {}
-    with open(path, 'rb') as f:
-        return tomllib.load(f)
+    raw = path.read_text(encoding='utf-8')
+    # Remove any [[...]] or [...] header lines whose key contains a bare /
+    # (codex project trust entries). Keep everything else.
+    import re as _re
+    cleaned = _re.sub(r'^\[{1,2}[^\]]*\/[^\]]*\]{1,2}[ \t]*\n(?:[^\[]*\n)*', '', raw, flags=_re.MULTILINE)
+    try:
+        return tomllib.loads(cleaned)
+    except Exception:
+        return {}
 
 
 def _toml_value(v):
@@ -125,11 +137,20 @@ def write_toml(path, doc):
     """Write a dict to a TOML file. Handles the scalar/list/nested-table subset used here.
 
     Comments in an existing file are not preserved (the file is regenerated).
+    Non-standard codex sections (e.g. [projects./path/...]) that contain bare
+    slashes are preserved verbatim at the end of the file since standard TOML
+    writers cannot round-trip them.
     """
+    import re as _re
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Extract non-standard sections to re-append after writing
+    existing = Path(path).read_text(encoding='utf-8') if Path(path).exists() else ''
+    nonstandard = _re.findall(r'(?:^|\n)(\[{1,2}[^\]]*\/[^\]]*\]{1,2}[ \t]*\n(?:[^\[]*\n)*)', '\n' + existing, flags=_re.MULTILINE)
     out = []
     _write_toml_lines(doc, '', out)
     text = '\n'.join(out).rstrip('\n') + '\n'
+    if nonstandard:
+        text += '\n' + ''.join(nonstandard).strip('\n') + '\n'
     with open(path, 'w') as f:
         f.write(text)
 
