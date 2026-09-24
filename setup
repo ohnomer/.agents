@@ -339,6 +339,8 @@ def sync_mcp_codex():
 
     def to_codex(name, cfg):
         result = {}
+        if cfg.get('url'):
+            result['url'] = cfg['url']
         if cfg.get('command'):
             result['command'] = cfg['command']
         args = cfg.get('args', [])
@@ -357,7 +359,14 @@ def sync_mcp_codex():
         return result
 
     before = json.dumps(existing, sort_keys=True)
-    doc['mcp_servers'] = {k: to_codex(k, v) for k, v in servers.items()}
+    new_servers = {}
+    for k, v in servers.items():
+        converted = to_codex(k, v)
+        # Skip entries with no transport (no command, no url) — env-only overlays
+        if not converted.get('command') and not converted.get('url'):
+            continue
+        new_servers[k] = converted
+    doc['mcp_servers'] = new_servers
     after = json.dumps(doc['mcp_servers'], sort_keys=True)
 
     write_toml(target, doc)
@@ -487,7 +496,7 @@ def sync_skills_codex():
 
     for skill in sorted((AGENTS / 'skills').iterdir()):
         if skill.is_dir():
-            kept.append({'path': str(skill.resolve())})
+            kept.append({'path': str(skill.resolve()), 'enabled': True})
 
     doc.setdefault('skills', {})['config'] = kept
     write_toml(target, doc)
@@ -499,9 +508,16 @@ def run_codex(yolo=False):
     config_dir = HOME / '.codex'
     os.makedirs(config_dir, exist_ok=True)
     # Codex reads a single ~/.codex/AGENTS.md as global instructions.
-    context_src = AGENTS / 'context' / 'CONTEXT.md'
-    if context_src.exists():
-        link(context_src, config_dir / 'AGENTS.md')
+    # Concatenate all context/*.md files (same content Kiro/Claude get via
+    # individual symlinks) into one file so nothing is silently dropped.
+    context_dir = AGENTS / 'context'
+    agents_md = config_dir / 'AGENTS.md'
+    parts = []
+    for ctx in sorted(context_dir.glob('*.md')):
+        parts.append(ctx.read_text())
+    if parts:
+        agents_md.write_text('\n\n---\n\n'.join(parts))
+        print(f'  written  {agents_md} ({len(parts)} context files)')
     sync_skills_codex()
     link_prompts(config_dir / 'commands')
     sync_mcp_codex()
