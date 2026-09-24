@@ -6,7 +6,7 @@ Idempotent: skips anything already correctly symlinked.
 MCP: merges mcp/servers.json + mcp/<harness>.servers.json + mcp/secrets.json + mcp/<harness>.secrets.json
      into each harness's native MCP config location.
 
-Usage: setup [--yolo] [claude|kiro|opencode|antigravity|all]
+Usage: setup [--yolo] [claude|kiro|opencode|antigravity|codex|all]
 """
 
 import argparse
@@ -15,6 +15,11 @@ import os
 import shutil
 import sys
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib
 
 AGENTS = Path(__file__).resolve().parent
 HOME = Path.home()
@@ -51,6 +56,82 @@ def write_json(path, doc):
     with open(path, 'w') as f:
         json.dump(doc, f, indent=2)
         f.write('\n')
+
+
+def read_toml(path):
+    """Read a TOML file into a dict. Returns {} if the file does not exist."""
+    path = Path(path)
+    if not path.exists() or path.stat().st_size == 0:
+        return {}
+    with open(path, 'rb') as f:
+        return tomllib.load(f)
+
+
+def _toml_value(v):
+    """Serialise a scalar / list-of-scalars value to its TOML literal form."""
+    if isinstance(v, bool):
+        return 'true' if v else 'false'
+    if isinstance(v, (int, float)):
+        return repr(v)
+    if isinstance(v, str):
+        return json.dumps(v)  # JSON string escaping is a valid TOML basic string
+    if isinstance(v, list):
+        return '[' + ', '.join(_toml_value(i) for i in v) + ']'
+    raise TypeError(f'unsupported TOML value type: {type(v)!r}')
+
+
+def _is_array_of_tables(v):
+    return isinstance(v, list) and len(v) > 0 and all(isinstance(i, dict) for i in v)
+
+
+def _write_toml_lines(doc, prefix, out):
+    """Recursively emit TOML lines for a dict.
+
+    Splits keys into scalars/scalar-lists, nested tables (dict), and
+    array-of-tables (list of dicts -> repeated [[prefix.key]] blocks).
+    """
+    scalars = {}
+    tables = {}
+    array_tables = {}
+    for k, v in doc.items():
+        if isinstance(v, dict):
+            tables[k] = v
+        elif _is_array_of_tables(v):
+            array_tables[k] = v
+        else:
+            scalars[k] = v
+
+    if prefix and (scalars or (not tables and not array_tables)):
+        out.append(f'[{prefix}]')
+    for k, v in scalars.items():
+        out.append(f'{k} = {_toml_value(v)}')
+    if scalars:
+        out.append('')
+
+    for k, v in tables.items():
+        table_prefix = f'{prefix}.{k}' if prefix else k
+        _write_toml_lines(v, table_prefix, out)
+
+    for k, rows in array_tables.items():
+        table_prefix = f'{prefix}.{k}' if prefix else k
+        for row in rows:
+            out.append(f'[[{table_prefix}]]')
+            for rk, rv in row.items():
+                out.append(f'{rk} = {_toml_value(rv)}')
+            out.append('')
+
+
+def write_toml(path, doc):
+    """Write a dict to a TOML file. Handles the scalar/list/nested-table subset used here.
+
+    Comments in an existing file are not preserved (the file is regenerated).
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    out = []
+    _write_toml_lines(doc, '', out)
+    text = '\n'.join(out).rstrip('\n') + '\n'
+    with open(path, 'w') as f:
+        f.write(text)
 
 
 def load_mcp_servers(harness):
@@ -249,6 +330,52 @@ def sync_mcp_opencode():
     print(f'  updated  {target} (mcp + instructions)')
 
 
+def sync_mcp_codex():
+    target = HOME / '.codex' / 'config.toml'
+    servers = load_mcp_servers('codex')
+
+    doc = read_toml(target)
+    existing = doc.get('mcp_servers', {})
+
+    def to_codex(name, cfg):
+        result = {}
+        if cfg.get('url'):
+            result['url'] = cfg['url']
+        if cfg.get('command'):
+            result['command'] = cfg['command']
+        args = cfg.get('args', [])
+        if args:
+            result['args'] = args
+        env = cfg.get('env', {})
+        if env:
+            result['env'] = env
+        # Preserve prior enable/disable state; new servers default to disabled.
+        if 'enabled' in cfg:
+            result['enabled'] = cfg['enabled']
+        elif name in existing and 'enabled' in existing[name]:
+            result['enabled'] = existing[name]['enabled']
+        else:
+            result['enabled'] = False
+        return result
+
+    before = json.dumps(existing, sort_keys=True)
+    new_servers = {}
+    for k, v in servers.items():
+        converted = to_codex(k, v)
+        # Skip entries with no transport (no command, no url) — env-only overlays
+        if not converted.get('command') and not converted.get('url'):
+            continue
+        new_servers[k] = converted
+    doc['mcp_servers'] = new_servers
+    after = json.dumps(doc['mcp_servers'], sort_keys=True)
+
+    write_toml(target, doc)
+    if before == after and target.exists():
+        print(f'  ok  {target}')
+    else:
+        print(f'  updated  {target}')
+
+
 # --- Yolo ---
 
 def yolo_claude():
@@ -274,6 +401,15 @@ def yolo_opencode():
     target = HOME / '.config' / 'opencode' / 'opencode.json'
     merge_config(AGENTS / 'config' / 'opencode' / 'opencode.json', target)
     print(f'  yolo  {target} (merged config/opencode/opencode.json)')
+
+
+def yolo_codex():
+    target = HOME / '.codex' / 'config.toml'
+    overrides = read_toml(AGENTS / 'config' / 'codex' / 'config.toml')
+    doc = read_toml(target)
+    deep_merge(doc, overrides)
+    write_toml(target, doc)
+    print(f'  yolo  {target} (merged config/codex/config.toml)')
 
 
 # --- Harness runners ---
@@ -336,6 +472,59 @@ def run_opencode(yolo=False):
         yolo_opencode()
 
 
+def sync_skills_codex():
+    """Register skills/*/ directories in ~/.codex/config.toml skills.config.
+
+    Codex references skill dirs by path in config.toml rather than scanning a
+    directory. Codex's loader silently skips symlinked skill directories, so
+    entries must point at the RESOLVED real path of each skill dir.
+    """
+    target = HOME / '.codex' / 'config.toml'
+    doc = read_toml(target)
+    skills_section = doc.get('skills', {})
+    entries = skills_section.get('config', [])
+
+    # Drop stale entries pointing into ~/.agents/skills/ (any layout) so the
+    # list can be rebuilt from the current skills/ directory.
+    stale_root = str((AGENTS / 'skills').resolve())
+    kept = []
+    for entry in entries:
+        path = entry.get('path', '') if isinstance(entry, dict) else str(entry)
+        if str(Path(path).resolve()).startswith(stale_root + os.sep):
+            continue
+        kept.append(entry)
+
+    for skill in sorted((AGENTS / 'skills').iterdir()):
+        if skill.is_dir():
+            kept.append({'path': str(skill.resolve()), 'enabled': True})
+
+    doc.setdefault('skills', {})['config'] = kept
+    write_toml(target, doc)
+    print(f'  updated  {target} (skills.config: {len(kept)} entries)')
+
+
+def run_codex(yolo=False):
+    print('=== Codex ===')
+    config_dir = HOME / '.codex'
+    os.makedirs(config_dir, exist_ok=True)
+    # Codex reads a single ~/.codex/AGENTS.md as global instructions.
+    # Concatenate all context/*.md files (same content Kiro/Claude get via
+    # individual symlinks) into one file so nothing is silently dropped.
+    context_dir = AGENTS / 'context'
+    agents_md = config_dir / 'AGENTS.md'
+    parts = []
+    for ctx in sorted(context_dir.glob('*.md')):
+        parts.append(ctx.read_text())
+    if parts:
+        agents_md.write_text('\n\n---\n\n'.join(parts))
+        print(f'  written  {agents_md} ({len(parts)} context files)')
+    sync_skills_codex()
+    link_prompts(config_dir / 'commands')
+    sync_mcp_codex()
+    if yolo:
+        yolo_codex()
+
+
 # --- Main ---
 
 def ensure_home_symlink():
@@ -360,6 +549,7 @@ def ensure_harness_symlinks():
         'kiro': (HOME / '.kiro', 'kiro-cli'),
         'opencode': (HOME / '.config' / 'opencode', 'opencode'),
         'antigravity': (HOME / '.gemini', 'agy'),
+        'codex': (HOME / '.codex', 'codex'),
     }
     count = 0
     for name, (target, binary) in targets.items():
@@ -382,7 +572,7 @@ def ensure_harness_symlinks():
 def main():
     parser = argparse.ArgumentParser(description='Wire agent harnesses to ~/.agents')
     parser.add_argument('harness', nargs='?', default='all',
-                        choices=['claude', 'kiro', 'opencode', 'antigravity', 'all'])
+                        choices=['claude', 'kiro', 'opencode', 'antigravity', 'codex', 'all'])
     parser.add_argument('--yolo', action='store_true',
                         help='Skip permission prompts in all harnesses')
     args = parser.parse_args()
@@ -413,9 +603,10 @@ def main():
         'kiro': run_kiro,
         'opencode': run_opencode,
         'antigravity': run_agy,
+        'codex': run_codex,
     }
 
-    binaries = {'claude': 'claude', 'kiro': 'kiro-cli', 'opencode': 'opencode', 'antigravity': 'agy'}
+    binaries = {'claude': 'claude', 'kiro': 'kiro-cli', 'opencode': 'opencode', 'antigravity': 'agy', 'codex': 'codex'}
 
     if args.harness == 'all':
         harnesses = [h for h in runners if shutil.which(binaries[h])]
