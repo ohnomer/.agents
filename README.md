@@ -215,10 +215,10 @@ New servers default to **disabled**. Each harness handles this differently:
 
 | What | Claude | Kiro | OpenCode | Antigravity | Codex |
 |------|--------|------|----------|-------------|-------|
-| Context | `~/.claude/rules/*.md` | `~/.kiro/steering/*.md` | `instructions` field in config | `~/.gemini/config/AGENTS.md` (single file; CONTEXT.md linked) | `~/.codex/AGENTS.md` (single file; CONTEXT.md linked) |
-| Skills | `~/.claude/skills/*/` | `~/.kiro/skills/*/` | `instructions` field in config | `~/.gemini/config/skills/*/` | `skills.config` entries in `~/.codex/config.toml` (resolved paths) |
+| Context | `~/.claude/rules/*.md` | `~/.kiro/steering/*.md` | `~/.config/opencode/AGENTS.md` (generated; context files concatenated) | `~/.gemini/config/AGENTS.md` (single file; CONTEXT.md linked) | `~/.codex/AGENTS.md` (single file; CONTEXT.md linked) |
+| Skills | `~/.claude/skills/*/` | `~/.kiro/skills/*/` | `config.skills` in `opencode.json` → `.agents/skills/` directory | `~/.gemini/config/skills/*/` | `skills.config` entries in `~/.codex/config.toml` (resolved paths) |
 | Prompts | `~/.claude/commands/*.md` | `~/.kiro/prompts/*.prompt.md` | `~/.config/opencode/commands/*.md` | — (not supported) | `~/.codex/commands/*.md` |
-| MCP | `~/.claude.json` → `mcpServers` | `~/.kiro/settings/mcp.json` → `mcpServers` | `~/.config/opencode/opencode.json` → `mcp` | `~/.gemini/config/mcp_config.json` → `mcpServers` | `~/.codex/config.toml` → `mcp_servers` |
+| MCP | `~/.claude.json` → `mcpServers` | `~/.kiro/settings/mcp.json` → `mcpServers` | `~/.config/opencode/opencode.json` → `mcp.servers` | `~/.gemini/config/mcp_config.json` → `mcpServers` | `~/.codex/config.toml` → `mcp_servers` |
 
 ## Roadmap
 

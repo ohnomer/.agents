@@ -398,13 +398,13 @@ def sync_mcp_opencode():
         return result
 
     doc = read_json(target) if target.exists() else {}
-    doc['mcp'] = {n: to_opencode(c) for n, c in servers.items() if not c.get('disabled', True)}
-    doc['instructions'] = [
-        str(AGENTS / 'context' / '*.md'),
-        str(AGENTS / 'skills' / '*' / 'SKILL.md'),
-    ]
+    active = {n: to_opencode(c) for n, c in servers.items() if not c.get('disabled', True)}
+    doc['mcp'] = {'servers': active} if active else {}
+    doc['skills'] = [str(AGENTS / 'skills')]
+    # Remove legacy v1 instructions key if present from a prior run
+    doc.pop('instructions', None)
     write_json(target, doc)
-    print(f'  updated  {target} (mcp + instructions)')
+    print(f'  updated  {target} (mcp.servers + skills)')
 
 
 def sync_mcp_codex():
@@ -547,8 +547,25 @@ def run_opencode(yolo=False):
     print('=== OpenCode ===')
     link_prompts(HOME / '.config' / 'opencode' / 'commands')
     sync_mcp_opencode()
+    _write_opencode_agents_md()
     if yolo:
         yolo_opencode()
+
+
+def _write_opencode_agents_md():
+    """Concatenate context/*.md files into ~/.config/opencode/AGENTS.md.
+
+    opencode v2 loads context via an AGENTS.md ancestor walk (ConfigInstructionPlugin).
+    The v1 `instructions` glob approach is silently ignored in v2.
+    """
+    context_files = sorted((AGENTS / 'context').glob('*.md'))
+    if not context_files:
+        return
+    parts = [f.read_text() for f in context_files]
+    agents_md = HOME / '.config' / 'opencode' / 'AGENTS.md'
+    agents_md.parent.mkdir(parents=True, exist_ok=True)
+    agents_md.write_text('\n\n---\n\n'.join(parts))
+    print(f'  updated  {agents_md} ({len(parts)} context file(s))')
 
 
 def sync_skills_codex():
