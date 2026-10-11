@@ -186,8 +186,8 @@ def load_kiro_aliases():
     validated = {}
     errors = []
     for key, value in aliases.items():
-        if not isinstance(key, str) or '::' not in key:
-            errors.append(f'  invalid key {key!r}: must be a string containing "::"')
+        if not isinstance(key, str) or not (key.startswith('@') and '/' in key):
+            errors.append(f'  invalid key {key!r}: must be in "@server/tool" format')
             continue
         if not isinstance(value, str) or not value.strip():
             errors.append(f'  invalid value for {key!r}: must be a non-empty string')
