@@ -79,11 +79,11 @@ secrets.json             (shared secrets: API keys)
 
 kiro flattens all MCP tool names into a single unprefixed namespace. When two servers expose identically-named tools (e.g. `carrier::crews` and `corsair::crews`), only one is reachable. Other harnesses handle this natively (Claude: `server__tool`, Codex: `mcp__server__tool`, OpenCode/Antigravity: `server_tool`).
 
-Declare aliases in `kiro.servers.json` under a top-level `aliases` key:
+Declare aliases in `kiro.servers.json` under a top-level `@aliases` key:
 
 ```json
 {
-  "aliases": {
+  "@aliases": {
     "corsair::crews": "corsair_crews",
     "corsair::launch": "corsair_launch"
   }

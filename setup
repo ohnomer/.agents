@@ -177,11 +177,11 @@ def load_kiro_aliases():
     if not path.exists():
         return {}
     data = read_json(path)
-    aliases = data.get('aliases')
+    aliases = data.get('@aliases')
     if aliases is None:
         return {}
     if not isinstance(aliases, dict):
-        print(f'ERROR: aliases in mcp/kiro.servers.json must be an object, got {type(aliases).__name__}')
+        print(f'ERROR: @aliases in mcp/kiro.servers.json must be an object, got {type(aliases).__name__}')
         sys.exit(1)
     validated = {}
     errors = []

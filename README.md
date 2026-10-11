@@ -166,11 +166,11 @@ Then run `~/.agents/setup` to merge into all harnesses.
 
 kiro flattens all MCP tool names into a single namespace, so two servers exposing a tool with the same name will collide. kiro supports `toolAliases` in its agent config to remap `server::tool` to a distinct name.
 
-Declare aliases in `mcp/kiro.servers.json` under a top-level `aliases` key:
+Declare aliases in `mcp/kiro.servers.json` under a top-level `@aliases` key:
 
 ```json
 {
-  "aliases": {
+  "@aliases": {
     "corsair::crews": "corsair_crews",
     "corsair::launch": "corsair_launch",
     "corsair::dispatch": "corsair_dispatch"
