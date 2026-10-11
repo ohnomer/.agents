@@ -162,6 +162,30 @@ If the server needs secrets, create `mcp/secrets.json` (gitignored):
 
 Then run `~/.agents/setup` to merge into all harnesses.
 
+### Adding MCP tool aliases (kiro only)
+
+kiro flattens all MCP tool names into a single namespace, so two servers exposing a tool with the same name will collide. kiro supports `toolAliases` in its agent config to remap `server::tool` to a distinct name.
+
+Declare aliases in `mcp/kiro.servers.json` under a top-level `aliases` key:
+
+```json
+{
+  "aliases": {
+    "corsair::crews": "corsair_crews",
+    "corsair::launch": "corsair_launch",
+    "corsair::dispatch": "corsair_dispatch"
+  }
+}
+```
+
+`setup` merges these into `toolAliases` in `~/.kiro/agents/general.json` on every run. The merge is non-destructive — aliases you declare overwrite matching keys, but any `toolAliases` entries not present in `kiro.servers.json` are left untouched.
+
+This is kiro-specific. Claude Code, Codex, Antigravity, and OpenCode all prefix tool names with the server name natively and do not need aliases.
+
+> **Note on stale aliases:** `setup` never removes aliases. If you delete an entry from `kiro.servers.json`, you must also manually remove it from `~/.kiro/agents/general.json`.
+
+Then run `~/.agents/setup` to merge into all harnesses.
+
 ## MCP configuration
 
 Server config is layered and merged in order:

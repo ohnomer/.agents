@@ -167,6 +167,40 @@ def load_mcp_servers(harness):
     return expand_paths(servers)
 
 
+def load_kiro_aliases():
+    """Read and validate the aliases block from mcp/kiro.servers.json.
+
+    Returns a dict of {"server::tool": "alias_name"} entries, or {} if absent.
+    Exits with an error if any entry is malformed.
+    """
+    path = AGENTS / 'mcp' / 'kiro.servers.json'
+    if not path.exists():
+        return {}
+    data = read_json(path)
+    aliases = data.get('aliases')
+    if aliases is None:
+        return {}
+    if not isinstance(aliases, dict):
+        print(f'ERROR: aliases in mcp/kiro.servers.json must be an object, got {type(aliases).__name__}')
+        sys.exit(1)
+    validated = {}
+    errors = []
+    for key, value in aliases.items():
+        if not isinstance(key, str) or '::' not in key:
+            errors.append(f'  invalid key {key!r}: must be a string containing "::"')
+            continue
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f'  invalid value for {key!r}: must be a non-empty string')
+            continue
+        validated[key] = value
+    if errors:
+        print('ERROR: invalid entries in mcp/kiro.servers.json aliases block:')
+        for e in errors:
+            print(e)
+        sys.exit(1)
+    return validated
+
+
 def link(src, dst):
     """Create a symlink, with safety checks."""
     src, dst = str(src), str(dst)
@@ -293,6 +327,28 @@ def sync_mcp_kiro():
     doc = {'mcpServers': {k: clean(k, v) for k, v in servers.items()}}
     write_json(target, doc)
     print(f'  updated  {target}')
+
+
+def sync_tool_aliases_kiro(aliases):
+    """Merge aliases into toolAliases in ~/.kiro/agents/general.json.
+
+    Non-destructive: entries in aliases overwrite matching keys; unmanaged
+    keys already in toolAliases are left unchanged. No-op if aliases is empty.
+    """
+    if not aliases:
+        return
+    target = HOME / '.kiro' / 'agents' / 'general.json'
+    if target.exists():
+        doc = read_json(target)
+    else:
+        # Bootstrap from the template in config/kiro/agents/general.json
+        template = AGENTS / 'config' / 'kiro' / 'agents' / 'general.json'
+        doc = read_json(template) if template.exists() else {}
+    doc.setdefault('toolAliases', {})
+    doc['toolAliases'].update(aliases)
+    os.makedirs(target.parent, exist_ok=True)
+    write_json(target, doc)
+    print(f'  updated  {target} (toolAliases: {len(aliases)} entries)')
 
 
 def sync_mcp_agy():
@@ -461,6 +517,8 @@ def run_kiro(yolo=False):
     sync_mcp_kiro()
     if yolo:
         yolo_kiro()
+    aliases = load_kiro_aliases()
+    sync_tool_aliases_kiro(aliases)
 
 
 def yolo_agy():

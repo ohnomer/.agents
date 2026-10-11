@@ -75,6 +75,25 @@ secrets.json             (shared secrets: API keys)
 3. If it needs secrets, add them to `secrets.json` (or a harness-specific `.secrets.json`)
 4. Run `~/.agents/setup` to apply
 
+## Adding MCP tool aliases (kiro only)
+
+kiro flattens all MCP tool names into a single unprefixed namespace. When two servers expose identically-named tools (e.g. `carrier::crews` and `corsair::crews`), only one is reachable. Other harnesses handle this natively (Claude: `server__tool`, Codex: `mcp__server__tool`, OpenCode/Antigravity: `server_tool`).
+
+Declare aliases in `kiro.servers.json` under a top-level `aliases` key:
+
+```json
+{
+  "aliases": {
+    "corsair::crews": "corsair_crews",
+    "corsair::launch": "corsair_launch"
+  }
+}
+```
+
+Each entry maps `"server::tool"` to a distinct alias name. `setup` merges these into `toolAliases` in `~/.kiro/agents/general.json` on every run. The merge is non-destructive: declared aliases overwrite matching keys; any `toolAliases` entries not present in `kiro.servers.json` are left unchanged.
+
+> **Stale aliases are never removed automatically.** If you delete an entry from `kiro.servers.json`, you must also manually remove the corresponding key from `~/.kiro/agents/general.json`.
+
 ## Files in this directory
 
 ```
